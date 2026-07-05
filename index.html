@@ -340,13 +340,15 @@ footer{background:var(--surface-low);border-top:1px solid var(--hair);padding:cl
   els.forEach(e=>io.observe(e));
 })();
 
-// brain synapse sparks — impulses firing node-to-node inside the brain image
+// brain synapse sparks — fast impulses that fire point-to-point and flash on arrival
 (function(){
   const canvas=document.getElementById('brainviz'); if(!canvas)return;
   const ctx=canvas.getContext('2d');
   const reduceB=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let W,H,dpr,running=false,sparks=[],last=performance.now(),spawnT=0;
+  let W,H,dpr,running=false,sparks=[],flashes=[],last=performance.now(),spawnT=0;
   const CX=()=>W*0.5, CY=()=>H*0.475, RX=()=>W*0.45, RY=()=>H*0.455;
+  // site palette: teal (x2), violet, pink, green
+  const PAL=['104,236,236','104,236,236','162,132,255','255,116,206','120,250,158'];
   function size(){
     dpr=Math.min(2,window.devicePixelRatio||1);
     W=canvas.clientWidth;H=canvas.clientHeight;
@@ -363,34 +365,48 @@ footer{background:var(--surface-low);border-top:1px solid var(--hair);padding:cl
     let x1=x0+Math.cos(dir)*len, y1=y0+Math.sin(dir)*len;
     const ex=(x1-CX())/RX(), ey=(y1-CY())/RY(), d=Math.hypot(ex,ey);
     if(d>0.94){x1=CX()+(x1-CX())*0.94/d; y1=CY()+(y1-CY())*0.94/d;}
-    sparks.push({x0,y0,x1,y1,p:0,life:0.5+Math.random()*0.45,
-      col:Math.random()<0.82?'150,205,255':'255,185,120',
-      w:0.7+Math.random()*0.8});
+    const col=PAL[(Math.random()*PAL.length)|0];
+    // fast transit: each impulse zips across in ~0.28-0.5s (same spawn frequency)
+    sparks.push({x0,y0,x1,y1,p:0,life:0.28+Math.random()*0.22,col,
+      w:0.7+Math.random()*0.8,flashed:false});
+    flashes.push({x:x0,y:y0,col,p:0,life:0.22,w:0.6}); // small pop where it fires from
   }
   function draw(dt){
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,W,H);
+    // travelling impulses (crisp head + short bright trail)
     for(const s of sparks){
       s.p+=dt/s.life;
       const e=1-Math.pow(1-Math.min(1,s.p),2);
       const hx=s.x0+(s.x1-s.x0)*e, hy=s.y0+(s.y1-s.y0)*e;
-      const back=Math.max(0,e-0.16);
+      const back=Math.max(0,e-0.11);
       const tx=s.x0+(s.x1-s.x0)*back, ty=s.y0+(s.y1-s.y0)*back;
-      const fade=s.p>0.75?Math.max(0,1-(s.p-0.75)/0.25):1;
       const g=ctx.createLinearGradient(tx,ty,hx,hy);
-      g.addColorStop(0,`rgba(${s.col},0)`);g.addColorStop(1,`rgba(${s.col},${(0.55*fade).toFixed(3)})`);
-      ctx.strokeStyle=g;ctx.lineWidth=1.5*s.w;ctx.lineCap='round';
+      g.addColorStop(0,`rgba(${s.col},0)`);g.addColorStop(1,`rgba(${s.col},0.6)`);
+      ctx.strokeStyle=g;ctx.lineWidth=1.4*s.w;ctx.lineCap='round';
       ctx.beginPath();ctx.moveTo(tx,ty);ctx.lineTo(hx,hy);ctx.stroke();
-      ctx.beginPath();ctx.arc(hx,hy,1.9*s.w+0.7,0,6.283);
-      ctx.shadowColor=`rgba(${s.col},1)`;ctx.shadowBlur=15*s.w;
-      ctx.fillStyle=`rgba(238,247,255,${(0.96*fade).toFixed(3)})`;ctx.fill();ctx.shadowBlur=0;
+      ctx.beginPath();ctx.arc(hx,hy,1.5*s.w+0.6,0,6.283);
+      ctx.shadowColor=`rgba(${s.col},1)`;ctx.shadowBlur=13*s.w;
+      ctx.fillStyle='rgba(240,255,255,0.96)';ctx.fill();ctx.shadowBlur=0;
+      if(s.p>=1&&!s.flashed){s.flashed=true;flashes.push({x:s.x1,y:s.y1,col:s.col,p:0,life:0.3,w:s.w});}
     }
     sparks=sparks.filter(s=>s.p<1);
+    // node flashes — a quick expanding ring + bright core when an impulse lands
+    for(const f of flashes){
+      f.p+=dt/f.life;
+      const a=Math.max(0,1-f.p), r=(1.5+f.p*11)*f.w;
+      ctx.strokeStyle=`rgba(${f.col},${(0.5*a).toFixed(3)})`;ctx.lineWidth=1.2*f.w;
+      ctx.beginPath();ctx.arc(f.x,f.y,r,0,6.283);ctx.stroke();
+      ctx.beginPath();ctx.arc(f.x,f.y,1.7*f.w,0,6.283);
+      ctx.shadowColor=`rgba(${f.col},1)`;ctx.shadowBlur=12*f.w;
+      ctx.fillStyle=`rgba(240,255,255,${(0.92*a).toFixed(3)})`;ctx.fill();ctx.shadowBlur=0;
+    }
+    flashes=flashes.filter(f=>f.p<1);
   }
   function loop(now){
     if(!running)return;
     const dt=Math.min(0.05,(now-last)/1000);last=now;
-    spawnT-=dt; if(spawnT<=0){spawn();spawnT=1.0+Math.random()*2.0;}
+    spawnT-=dt; if(spawnT<=0){spawn();spawnT=1.0+Math.random()*2.0;} // unchanged frequency: one every 1-3s
     draw(dt); requestAnimationFrame(loop);
   }
   size(); let rs; addEventListener('resize',()=>{clearTimeout(rs);rs=setTimeout(size,150);});
@@ -398,7 +414,7 @@ footer{background:var(--surface-low);border-top:1px solid var(--hair);padding:cl
     new IntersectionObserver(en=>{
       const vis=en[0].isIntersecting;
       if(vis&&!running){running=true;last=performance.now();requestAnimationFrame(loop);}
-      if(!vis)running=false;
+      if(!vis){running=false;sparks=[];flashes=[];}
     },{threshold:0.02}).observe(canvas);
   }
 })();
